@@ -1,8 +1,10 @@
 [package]
-name = "tcp-server"
+name = "epistle"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-epistle = { path = "../epistle" }
 rmp-serde = "1.0.0"
+serde = "1.0.136"
+serde_derive = "1.0.136"
+
