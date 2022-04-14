@@ -2,7 +2,7 @@
 members = [
     "epistle",
     "tcp-server",
-    "tcp-cilent",
+    "tcp-client",
     "chat-client",
 ]
 
