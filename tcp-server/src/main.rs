@@ -6,13 +6,15 @@ fn handle_client(mut stream: TcpStream, filename: &str) -> Result<(), std::io::E
 
     let msg = epistle::Epistle::Document(
         epistle::Document {
-            filename,
+            filename: filename.to_string(),
             filesize: bytes.len(),
-            data: &bytes,
+            data: bytes,
         }
     );
 
     rmp_serde::encode::write(&mut stream, &msg).unwrap();
+
+    println!("[+] served file {}", filename);
 
     Ok(())
 }
