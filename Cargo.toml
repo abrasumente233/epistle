@@ -4,5 +4,6 @@ members = [
     "tcp-server",
     "tcp-client",
     "chat-client",
+    "chat-server",
 ]
 

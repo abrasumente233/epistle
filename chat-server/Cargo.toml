@@ -1,0 +1,10 @@
+[package]
+name = "chat-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+epistle = { path = "../epistle" }
+rmp-serde = "1.0.0"
+
+[features]
