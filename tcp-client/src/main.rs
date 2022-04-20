@@ -25,7 +25,6 @@ fn process_epistle(msg: Epistle) {
 }
 
 fn main() {
-
     std::fs::create_dir(DOWNLOAD_PREFIX).ok();
 
     let stream = TcpStream::connect("127.0.0.1:4444").expect("Connection failed");

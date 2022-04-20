@@ -83,7 +83,11 @@ fn draw<B: Backend>(app: &App, f: &mut Frame<B>) {
             Style::default()
         })
         .scroll((0, scroll)) // What is this?
-        .block(Block::default().borders(Borders::ALL).title(format!("⌨️  Say ({})", *USERNAME)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("⌨️  Say ({})", *USERNAME)),
+        );
 
     f.render_widget(input, chunks[1]);
 

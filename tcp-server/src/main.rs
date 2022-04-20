@@ -1,16 +1,13 @@
 use std::net::{TcpListener, TcpStream};
 
 fn handle_client(mut stream: TcpStream, filename: &str) -> Result<(), std::io::Error> {
-
     let bytes = std::fs::read(filename).unwrap();
 
-    let msg = epistle::Epistle::Document(
-        epistle::Document {
-            filename: filename.to_string(),
-            filesize: bytes.len(),
-            data: bytes,
-        }
-    );
+    let msg = epistle::Epistle::Document(epistle::Document {
+        filename: filename.to_string(),
+        filesize: bytes.len(),
+        data: bytes,
+    });
 
     rmp_serde::encode::write(&mut stream, &msg).unwrap();
 
@@ -20,7 +17,6 @@ fn handle_client(mut stream: TcpStream, filename: &str) -> Result<(), std::io::E
 }
 
 fn main() {
-    
     // Extract filename from command line arguments
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
