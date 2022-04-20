@@ -9,7 +9,7 @@ const DOWNLOAD_PREFIX: &str = "Downloads";
 fn process_epistle(msg: Epistle) {
     match msg {
         Epistle::Handshake => println!("Handshake!"),
-        Epistle::Message(message) => println!("Message: {}", message),
+        Epistle::Message(message) => println!("Message: {:?}", message),
         Epistle::Document(Document {
             filename,
             filesize: _,
