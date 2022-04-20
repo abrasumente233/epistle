@@ -3,6 +3,8 @@ members = [
     "epistle",
     "tcp-server",
     "tcp-client",
+    "udp-server",
+    "udp-client",
     "chat-client",
     "chat-server",
 ]

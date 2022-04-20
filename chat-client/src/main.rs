@@ -5,14 +5,11 @@ use crossterm::{
 };
 use epistle::Epistle;
 use std::{
-    fs::File,
+    fs::{create_dir, File},
     io::{self, Write},
     net::TcpStream,
     path::Path,
-    sync::{
-        mpsc::{sync_channel, Receiver, SyncSender},
-        Arc, Mutex,
-    },
+    sync::mpsc::{sync_channel, Receiver, SyncSender},
     time::Duration,
 };
 use tui::{
@@ -24,6 +21,19 @@ use tui::{
     Frame, Terminal,
 };
 use tui_input::{backend::crossterm as input_backend, Input, InputResponse};
+#[macro_use]
+extern crate lazy_static;
+
+lazy_static! {
+    static ref USERNAME: String = {
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() != 2 {
+            panic!("please provide a single argument as the username")
+        }
+        let name = &args[1];
+        name.to_string()
+    };
+}
 
 const DOWNLOAD_PREFIX: &str = "Downloads";
 
@@ -43,22 +53,11 @@ fn draw<B: Backend>(app: &App, f: &mut Frame<B>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
-        .constraints(
-            [
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(3),
-            ]
-            .as_ref(),
-        )
+        .constraints([Constraint::Min(1), Constraint::Length(3)].as_ref())
         .split(f.size());
 
-    // Help messages
-    let block = Block::default().title("Block").borders(Borders::ALL);
-    f.render_widget(block, chunks[0]);
-
     // Chat logs
-    let block = Block::default().title("Block 2").borders(Borders::ALL);
+    let block = Block::default().title("💬 Chat").borders(Borders::ALL);
     let messages: Vec<ListItem> = app
         .messages
         .iter()
@@ -72,10 +71,10 @@ fn draw<B: Backend>(app: &App, f: &mut Frame<B>) {
         })
         .collect();
     let messages = List::new(messages).block(block);
-    f.render_widget(messages, chunks[1]);
+    f.render_widget(messages, chunks[0]);
 
     // Chat input
-    let width = chunks[2].width.max(3) - 3;
+    let width = chunks[1].width.max(3) - 3;
     let scroll = (app.input.cursor() as u16).max(width) - width;
     let input = Paragraph::new(app.input.value())
         .style(if app.is_editing {
@@ -84,20 +83,20 @@ fn draw<B: Backend>(app: &App, f: &mut Frame<B>) {
             Style::default()
         })
         .scroll((0, scroll)) // What is this?
-        .block(Block::default().borders(Borders::ALL).title("Input"));
+        .block(Block::default().borders(Borders::ALL).title(format!("⌨️  Say ({})", *USERNAME)));
 
-    f.render_widget(input, chunks[2]);
+    f.render_widget(input, chunks[1]);
 
     // Set input cursor location
     if app.is_editing {
         f.set_cursor(
-            chunks[2].x + (app.input.cursor() as u16).min(width) + 1,
-            chunks[2].y + 1,
+            chunks[1].x + (app.input.cursor() as u16).min(width) + 1,
+            chunks[1].y + 1,
         );
     }
 }
 
-fn run(rx: Receiver<ChatMessage>, stream: Arc<Mutex<TcpStream>>) -> Result<(), io::Error> {
+fn run(rx: Receiver<ChatMessage>, stream: TcpStream) -> Result<(), io::Error> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -131,7 +130,7 @@ fn run_draw_loop<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     rx: Receiver<ChatMessage>,
-    stream: Arc<Mutex<TcpStream>>,
+    mut stream: TcpStream,
 ) -> Result<(), io::Error> {
     loop {
         terminal.draw(|f| draw(&app, f))?;
@@ -146,12 +145,28 @@ fn run_draw_loop<B: Backend>(
                     match resp {
                         Some(InputResponse::StateChanged(_)) => {}
                         Some(InputResponse::Submitted) => {
-                            let msg = Epistle::Message(app.input.value().into());
+                            let input: String = app.input.value().into();
+                            const SEND_FILE_COMMAND: &str = "@file ";
+
+                            let msg;
+
+                            if input.starts_with(SEND_FILE_COMMAND) {
+                                let filename = Path::new(&input[SEND_FILE_COMMAND.len()..]);
+                                let data = std::fs::read(filename).unwrap();
+                                msg = Epistle::Document(epistle::Document {
+                                    filename: filename.to_str().unwrap().to_string(),
+                                    filesize: data.len(),
+                                    data,
+                                });
+                            } else {
+                                msg = Epistle::Message(epistle::Message {
+                                    username: (*USERNAME).clone(),
+                                    content: app.input.value().into(),
+                                });
+                            }
+
                             app.input = Input::default();
-                            let stream = &mut *stream.lock().unwrap();
-                            println!("before write");
-                            rmp_serde::encode::write(stream, &msg).unwrap();
-                            println!("after write");
+                            rmp_serde::encode::write(&mut stream, &msg).unwrap();
                         }
                         Some(InputResponse::Escaped) => {
                             app.is_editing = false;
@@ -183,8 +198,8 @@ fn process_epistle(msg: Epistle, tx: &SyncSender<ChatMessage>) {
         Epistle::Handshake => println!("Handshake!"),
         Epistle::Message(message) => {
             tx.send(ChatMessage {
-                username: "he".into(),
-                message,
+                username: message.username,
+                message: message.content,
             })
             .unwrap();
         }
@@ -205,32 +220,28 @@ fn process_epistle(msg: Epistle, tx: &SyncSender<ChatMessage>) {
 fn main() -> Result<(), io::Error> {
     let (tx, rx) = sync_channel::<ChatMessage>(3);
 
-    let stream = TcpStream::connect("127.0.0.1:4444").expect("Connection failed");
-    let stream = Arc::new(Mutex::new(stream));
+    create_dir(Path::new(DOWNLOAD_PREFIX)).ok();
 
-    let my_stream = stream.clone();
-    let socket_handle = std::thread::spawn(move || {
-        loop {
-            let msg;
-            {
-                let stream = &mut *my_stream.lock().unwrap();
-                msg = rmp_serde::decode::from_read(stream);
-            }
+    let reader_stream = TcpStream::connect("127.0.0.1:4444").expect("Connection failed");
+    let writer_stream = reader_stream.try_clone().expect("TcpStream clone failed");
 
-            match msg {
-                Ok(msg) => process_epistle(msg, &tx),
-                Err(_) => (),
-            };
-
-            std::thread::sleep(Duration::from_millis(100));
+    std::thread::spawn(move || loop {
+        let msg;
+        {
+            msg = rmp_serde::decode::from_read(&reader_stream);
         }
+
+        match msg {
+            Ok(msg) => process_epistle(msg, &tx),
+            Err(_) => (),
+        };
+
+        std::thread::sleep(Duration::from_millis(100));
     });
 
-    let my_stream = stream.clone();
-    let ui_handle = std::thread::spawn(move || run(rx, my_stream));
+    let ui_handle = std::thread::spawn(move || run(rx, writer_stream));
 
     ui_handle.join().ok();
-    socket_handle.join().ok();
 
     Ok(())
 }

@@ -9,9 +9,15 @@ pub struct Document {
 }
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub struct Message {
+    pub username: String,
+    pub content: String,
+}
+
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum Epistle {
     Handshake,
-    Message(String),
+    Message(Message),
     Document(Document),
 }
 

@@ -38,6 +38,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "epistle",
+ "lazy_static",
  "rmp-serde",
  "tui",
  "tui-input",
@@ -93,6 +94,12 @@ checksum = "7a5bbe824c507c5da5956355e86a746d82e0e1464f65d862cc5e71da70e94b2c"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
@@ -339,6 +346,14 @@ checksum = "425271346f51f4a17222eb51b80a3184d7927fcdc1dee0d3e8b7933cbd756ca9"
 dependencies = [
  "crossterm",
 ]
+
+[[package]]
+name = "udp-client"
+version = "0.1.0"
+
+[[package]]
+name = "udp-server"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-segmentation"

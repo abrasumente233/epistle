@@ -1,72 +1,59 @@
 use std::{
     net::{TcpListener, TcpStream},
-    sync::{mpsc::sync_channel, Arc, Mutex},
+    sync::{
+        mpsc::{self, Receiver, SyncSender},
+        Arc, Mutex,
+    },
     thread::spawn,
-    time::Duration,
 };
 
 use epistle::Epistle;
 
-// What is even this................
-fn send_message(stream: &Arc<Mutex<TcpStream>>, msg: String) {
-    let stream = &mut *stream.lock().unwrap();
-    println!("sending {}", &msg);
-    let msg = Epistle::Message(msg);
-    rmp_serde::encode::write(stream, &msg).unwrap();
+// @FIXME: UPDATE THE NOTES.
+// Server accepts client sockets, and for every one of them:
+//     1) add it to clients' pool. (via `client_add_chan`)
+//     2) read on it, waiting for client messages and broadcast
+//        messages to everyone in the pool. (via `broadcast_chan`)
+
+fn broadcast_thread(streams: Arc<Mutex<Vec<TcpStream>>>, bcast_rx: Receiver<Epistle>) {
+    loop {
+        if let Ok(epistle) = bcast_rx.recv() {
+            println!("broadcasting {:?} to everyone", &epistle);
+            for mut stream in streams.lock().unwrap().iter() {
+                rmp_serde::encode::write(&mut stream, &epistle).unwrap();
+            }
+        }
+    }
 }
 
-fn handle_client(stream: Arc<Mutex<TcpStream>>) -> Result<(), std::io::Error> {
-    send_message(&stream, "hello".into());
-    std::thread::sleep(Duration::from_secs(3));
-    send_message(&stream, "oh no".into());
-    std::thread::sleep(Duration::from_secs(3));
-    send_message(&stream, "hhh".into());
-
-    Ok(())
+fn recv_thread(stream: TcpStream, bcast_tx: SyncSender<Epistle>) {
+    loop {
+        match rmp_serde::decode::from_read::<_, Epistle>(&stream) {
+            Ok(epistle) => bcast_tx.send(epistle).unwrap(),
+            Err(_) => todo!(), // Disconnect when we received bad packets.
+        }
+    }
 }
 
 fn main() {
     // Fire up server
     let listener = TcpListener::bind("127.0.0.1:4444").expect("Cannot bind to :4444");
 
-    let (tx, rx) = sync_channel::<Arc<Mutex<TcpStream>>>(3);
+    let (bcast_tx, bcast_rx) = mpsc::sync_channel::<Epistle>(3);
 
-    spawn(move || loop {
-        let mut conns = vec![];
-        loop {
-            if let Ok(res) = rx.try_recv() {
-                conns.push(res);
-            }
+    let streams: Vec<TcpStream> = vec![];
+    let streams = Arc::new(Mutex::new(streams));
 
-            for conn in conns.iter() {
-                let conn = &*conn.lock().unwrap();
-
-                println!("wait on read");
-                if let Ok(packet) = rmp_serde::decode::from_read::<_, Epistle>(conn) {
-                    dbg!(packet);
-                }
-                //println!("after")
-            }
-
-            //std::thread::sleep(Duration::from_millis(100));
-        }
-    });
+    let bcast_streams = streams.clone();
+    spawn(move || broadcast_thread(bcast_streams, bcast_rx));
 
     for stream in listener.incoming() {
-        let stream = stream.expect("Abnomral connection");
-        //stream
-            //.set_read_timeout(Some(Duration::from_millis(50)))
-            //.unwrap();
-        let stream = Arc::new(Mutex::new(stream));
+        let reader_stream = stream.expect("Abnomral connection");
+        let writer_stream = reader_stream.try_clone().expect("TcpStream clone failed");
 
-        /*
-        let my_stream = stream.clone();
-        spawn(move || {
-            handle_client(my_stream).expect("error handling client");
-        });
-        */
+        let bcast_tx = bcast_tx.clone();
+        spawn(move || recv_thread(reader_stream, bcast_tx));
 
-        let my_stream = stream.clone();
-        tx.send(my_stream).unwrap();
+        streams.lock().unwrap().push(writer_stream);
     }
 }
